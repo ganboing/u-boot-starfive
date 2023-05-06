@@ -117,10 +117,6 @@ call_board_init_f_0:
 	mv	sp, a0
 #endif
 
-	/* Configure proprietary settings and customized CSRs of harts */
-call_harts_early_init:
-	jal	harts_early_init
-
 #ifndef CONFIG_XIP
 	/*
 	 * Pick hart to initialize global data and run U-Boot. The other harts
@@ -129,8 +125,19 @@ call_harts_early_init:
 	la	t0, hart_lottery
 	li	t1, 1
 	amoswap.w s2, t1, 0(t0)
+
+	/* Configure proprietary settings and customized CSRs of harts */
+call_harts_early_init:
+	mv	a0, s2
+	jal	harts_early_init
+
 	bnez	s2, wait_for_gd_init
 #else
+	/* Configure proprietary settings and customized CSRs of harts */
+call_harts_early_init:
+	mv	a0, tp
+	jal	harts_early_init
+
 	/*
 	 * FIXME: gp is set before it is initialized. If an XIP U-Boot ever
 	 * encounters a pending IPI on boot it is liable to jump to whatever

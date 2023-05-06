@@ -25,7 +25,7 @@ int spl_soc_init(void)
 	return 0;
 }
 
-void harts_early_init(void)
+void harts_early_init(ulong secondary)
 {
 	/*
 	 * Feature Disable CSR

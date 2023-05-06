@@ -156,6 +156,6 @@ int arch_early_init_r(void)
  * In a multi-core system, memory access shall be careful here, it shall
  * take care of race conditions.
  */
-__weak void harts_early_init(void)
+__weak void harts_early_init(ulong secondary)
 {
 }
