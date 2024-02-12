@@ -57,10 +57,80 @@ struct image_header *spl_get_load_buffer(ssize_t offset, size_t size)
 	return (struct image_header *)(STARFIVE_SPL_BOOT_LOAD_ADDR);
 }
 
+void early_write_console(const char *buf, size_t sz)
+{
+	for (; sz; ++buf, --sz) {
+		while((readl((void*)(0x10000000 + 0x14)) & 0x20) == 0);
+		writel(buf[0], (void*)0x10000000);
+	}
+}
+
+static u32 reg_dump_sys_crg[0x100];
+static u32 reg_dump_stg_crg[0x100];
+static u32 reg_dump_aon_crg[0x100];
+static u32 reg_dump_otp[0x4];
+static u32 otp_dump_mem[0x200];
+
+struct {
+	volatile u32 * const base;
+	u32 * save;
+	size_t n;
+} reg_dumps[4] = {
+	{ (void*)0x10230000, reg_dump_stg_crg, ARRAY_SIZE(reg_dump_stg_crg) },
+	{ (void*)0x13020000, reg_dump_sys_crg, ARRAY_SIZE(reg_dump_sys_crg) },
+	{ (void*)0x17000000, reg_dump_aon_crg, ARRAY_SIZE(reg_dump_aon_crg) },
+	{ (void*)0x17050000, reg_dump_otp, ARRAY_SIZE(reg_dump_otp) },
+};
+
+void dump_regs(void)
+{
+	static volatile u32 * const otp_sr = (void*)0x17050008;
+	static volatile u32 * const otp_opr = (void*)0x1705000c;
+	static volatile u32 * const otp_mem = (void*)0x17050800;
+
+	for (size_t i = 0; i < ARRAY_SIZE(reg_dumps); i++) {
+		for (size_t j = 0; j < reg_dumps[i].n; j++) {
+			reg_dumps[i].save[j] = readl(&reg_dumps[i].base[j]);
+		}
+	}
+	for (size_t i = 0; i < ARRAY_SIZE(otp_dump_mem); i++) {
+		// Set mode to READ
+		writel(1, otp_opr);
+		// wait for busy to clear
+		while(readl(otp_sr) & (1 << 31));
+		// read...
+		otp_dump_mem[i] = readl(&otp_mem[i]);
+		// wait for busy to clear
+		while(readl(otp_sr) & (1 << 31));
+		// Set mode to standby
+		writel(0, otp_opr);
+		// wait for busy to clear
+		while(readl(otp_sr) & (1 << 31));
+	}
+}
+
+void print_regs(void)
+{
+	for (size_t i = 0; i < ARRAY_SIZE(reg_dumps); i++) {
+		for (size_t j = 0; j < reg_dumps[i].n; j += 4) {
+			printf("%08lx: %08x %08x %08x %08x\n",
+				(unsigned long)(&reg_dumps[i].base[j]),
+				reg_dumps[i].save[j],   reg_dumps[i].save[j+1],
+				reg_dumps[i].save[j+2], reg_dumps[i].save[j+3]);
+		}
+	}
+	for (size_t i = 0; i < ARRAY_SIZE(otp_dump_mem); i+=4) {
+		printf("otp%03zx: %08x %08x %08x %08x\n", i * 4,
+			otp_dump_mem[i],   otp_dump_mem[i+1],
+			otp_dump_mem[i+2], otp_dump_mem[i+3]);
+	}
+}
+
 void board_init_f(ulong dummy)
 {
 	int ret;
 
+	dump_regs();
 	/* Set pll0 cpufreq to 1000M */
 	starfive_jh7110_pll_set_rate(PLL0, 1000000000);
 
@@ -171,6 +241,7 @@ void board_init_f(ulong dummy)
 
 	preloader_console_init();
 
+	print_regs();
 	ret = spl_board_init_f();
 	if (ret) {
 		debug("spl_board_init_f init failed: %d\n", ret);
